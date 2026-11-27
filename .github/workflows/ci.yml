@@ -47,7 +47,7 @@ jobs:
         needs.start.outputs.run == 'true'
         || (needs.start.result == 'skipped' && github.event_name != 'issue_comment'))
     runs-on: ${{ fromJSON(vars.RUNNERS)['linux-arm64'] }}
-    timeout-minutes: 30
+    timeout-minutes: 75
     permissions:
       contents: read
     concurrency:

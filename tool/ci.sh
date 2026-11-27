@@ -7,6 +7,7 @@ trap 'rm -rf "$scratch"' EXIT
 flutter="$scratch/flutter/bin/flutter"
 dart="$scratch/flutter/bin/dart"
 export FLUTTER_SUPPRESS_ANALYTICS=true
+export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://mirror.sjtu.edu.cn}"
 
 bash "$root/tool/native-dependencies.sh"
 bash "$root/tool/build-runtime.sh" "$scratch/runtime"
