@@ -56,10 +56,19 @@ jobs:
         run: |
           set -euo pipefail
           tag="v$VERSION"
+          asset=build/runtime/flutter-gizlet-runtime-arm64.zip
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" build/runtime/flutter-gizlet-runtime-arm64.zip --clobber
+            tagged_commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::$tag points to $tagged_commit. Retry that release or bump the version."
+              exit 1
+            fi
+            if ! gh release view "$tag" --json assets --jq '.assets[].name' \
+              | grep -Fxq "${asset##*/}"; then
+              gh release upload "$tag" "$asset"
+            fi
           else
-            gh release create "$tag" build/runtime/flutter-gizlet-runtime-arm64.zip \
+            gh release create "$tag" "$asset" \
               --target "$GITHUB_SHA" --title "$tag" --generate-notes
           fi
 
