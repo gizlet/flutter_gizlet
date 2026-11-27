@@ -7,6 +7,7 @@ runtime=$2
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 "$flutter" create --empty --no-pub --platforms=linux --project-name gizlet_smoke "$scratch/app"
+"$flutter" pub global activate --source path "$root"
 cat > "$scratch/app/gizlet.toml" <<'TOML'
 id = "io.gizlet.smoke"
 name = "Gizlet Smoke"
@@ -19,8 +20,7 @@ tier = "lite"
 entry = "flutter-pi"
 TOML
 cd "$scratch/app"
-"$(dirname "$flutter")/dart" --packages="$root/.dart_tool/package_config.json" \
-  "$root/bin/flutter_gizlet.dart" build --arch=arm64 --cpu=generic --release \
+"$flutter" pub global run flutter_gizlet build --arch=arm64 --cpu=generic --release \
   --runtime "$runtime"
 package=build/gizlet/io.gizlet.smoke-0.1.0-aarch64-unknown-linux-gnu-lite.gzl
 unzip -q "$package" -d "$scratch/gzl"

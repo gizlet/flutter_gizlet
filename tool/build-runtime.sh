@@ -64,11 +64,15 @@ grep -q 'Run the app in release mode' "$work/help"
 python3 - "$stage" "$output/flutter-gizlet-runtime-arm64.zip" <<'PY'
 from pathlib import Path
 import sys
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 stage = Path(sys.argv[1])
 with ZipFile(sys.argv[2], 'w', ZIP_DEFLATED, allowZip64=False) as archive:
     for file in sorted(stage.rglob('*')):
         if file.is_file():
-            archive.write(file, file.relative_to(stage))
+            name = file.relative_to(stage).as_posix()
+            entry = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            entry.create_system = 3
+            entry.external_attr = (0o100755 if name == 'flutter-pi' else 0o100644) << 16
+            archive.writestr(entry, file.read_bytes(), compress_type=ZIP_DEFLATED)
 PY
