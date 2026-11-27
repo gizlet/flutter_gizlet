@@ -1,0 +1,17 @@
+name: flutter_gizlet
+description: Build Flutter applications for Gizlet OS and package them for Gizlet Store.
+version: 0.1.0
+repository: https://github.com/gizlet/flutter_gizlet
+environment:
+  sdk: ^3.13.0
+executables:
+  flutter_gizlet:
+dependencies:
+  archive: ^4.0.9
+  args: ^2.7.0
+  crypto: ^3.0.7
+  path: ^1.9.1
+  toml: ^0.18.0
+  yaml: ^3.1.3
+dev_dependencies:
+  test: ^1.29.0

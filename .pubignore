@@ -1,0 +1,6 @@
+.github/
+.sops.yaml
+native/
+secrets/
+test/
+tool/
