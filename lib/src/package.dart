@@ -186,11 +186,34 @@ File writeGzl({
   final staging = output.createTempSync('.flutter-gizlet-');
   try {
     final temporary = File(path.join(staging.path, spec.filename));
-    temporary.writeAsBytesSync(
-      Uint8List.fromList(ZipEncoder().encode(archive)),
-    );
+    temporary.writeAsBytesSync(_encodeUnixZip(archive));
     return temporary.renameSync(result.path);
   } finally {
     staging.deleteSync(recursive: true);
   }
+}
+
+Uint8List _encodeUnixZip(Archive archive) {
+  final bytes = ZipEncoder().encodeBytes(archive);
+  final central = ByteData.sublistView(bytes);
+  final end = bytes.length - 22;
+  if (central.getUint32(end, Endian.little) != 0x06054b50) {
+    throw const FormatException('Unexpected ZIP end record.');
+  }
+  var offset = central.getUint32(end + 16, Endian.little);
+  for (final file in archive.files) {
+    if (offset + 46 > end ||
+        central.getUint32(offset, Endian.little) != 0x02014b50) {
+      throw FormatException('Unexpected ZIP directory entry for ${file.name}.');
+    }
+    central.setUint8(offset + 5, 3);
+    offset +=
+        46 +
+        central.getUint16(offset + 28, Endian.little) +
+        central.getUint16(offset + 30, Endian.little) +
+        central.getUint16(offset + 32, Endian.little);
+  }
+  if (offset != end)
+    throw const FormatException('Unexpected ZIP directory end.');
+  return bytes;
 }

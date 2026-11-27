@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -65,6 +66,9 @@ void main() {
       );
       expect(manifest['names']['zh-CN'], '测试');
       expect(archive.findFile(entry)!.mode & 0x49, isNonZero);
+      final bytes = ByteData.sublistView(result.readAsBytesSync());
+      final directory = bytes.getUint32(bytes.lengthInBytes - 6, Endian.little);
+      expect(bytes.getUint8(directory + 5), 3);
       expect(
         utf8.decode(checksums.content).trim().split('\n'),
         unorderedEquals(
