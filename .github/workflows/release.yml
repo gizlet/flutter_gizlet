@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pub-dev-release
+
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - id: check
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version: //p' pubspec.yaml)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          status=$(curl -sS --retry 3 -o /dev/null -w '%{http_code}' \
+            "https://pub.dev/api/packages/flutter_gizlet/versions/$version")
+          case "$status" in
+            200) echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+            404) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::pub.dev returned HTTP $status"; exit 1 ;;
+          esac
+
+  runtime:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: bash tool/native-dependencies.sh
+      - run: bash tool/build-runtime.sh
+      - name: Publish the native runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          asset=build/runtime/flutter-gizlet-runtime-arm64.zip
+          if gh release view "$tag" >/dev/null 2>&1; then
+            tagged_commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::$tag points to $tagged_commit. Retry that release or bump the version."
+              exit 1
+            fi
+            if ! gh release view "$tag" --json assets --jq '.assets[].name' \
+              | grep -Fxq "${asset##*/}"; then
+              gh release upload "$tag" "$asset"
+            fi
+          else
+            gh release create "$tag" "$asset" \
+              --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          fi
+
+  publish:
+    needs: [version, runtime]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Install Dart and SOPS
+        env:
+          SOPS_VERSION: v3.13.3
+        run: |
+          set -euo pipefail
+          sdk="$RUNNER_TEMP/dart-sdk.zip"
+          curl -fsSL --retry 3 -o "$sdk" \
+            https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.0/sdk/dartsdk-linux-x64-release.zip
+          unzip -q "$sdk" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/dart-sdk/bin" >> "$GITHUB_PATH"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/getsops/sops/releases/download/$SOPS_VERSION"
+          curl -fsSLO "$base/sops-$SOPS_VERSION.linux.amd64"
+          curl -fsSLO "$base/sops-$SOPS_VERSION.checksums.txt"
+          grep " sops-$SOPS_VERSION.linux.amd64\$" "sops-$SOPS_VERSION.checksums.txt" | sha256sum -c -
+          install -m 0755 "sops-$SOPS_VERSION.linux.amd64" "$RUNNER_TEMP/sops"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Validate the package
+        run: |
+          dart pub get
+          dart pub publish --dry-run
+      - name: Publish to pub.dev
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f secrets/pub.dev.enc.json ]]; then
+            echo "::error::The encrypted pub.dev release credential is missing."
+            exit 1
+          fi
+          umask 077
+          auth_dir=$(mktemp -d)
+          trap 'rm -rf "$auth_dir"' EXIT
+          export XDG_CONFIG_HOME="$auth_dir"
+          mkdir "$auth_dir/dart"
+          sops decrypt secrets/pub.dev.enc.json > "$auth_dir/dart/pub-credentials.json"
+          unset SOPS_AGE_KEY
+          dart pub publish --force
